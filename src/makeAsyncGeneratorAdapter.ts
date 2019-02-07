@@ -1,5 +1,3 @@
-import { primeAsyncTerminator, AsyncTerminator } from "./Terminator";
-
 interface PromiseAndCallbacks<T> {
 	promise: Promise<T>;
 	resolve: (data: T) => void;
@@ -23,8 +21,11 @@ function makePromiseAndCallbacks<T>(): PromiseAndCallbacks<T> {
 }
 
 export function makeAsyncGeneratorAdapter<T>(
-	job: (asyncTerminator: AsyncTerminator, done: () => void) => void,
-) {
+	job: (iterator: {
+		next: (data: T) => Promise<IteratorResult<undefined>>;
+		throw: (error: Error) => Promise<IteratorResult<undefined>>;
+	}) => Promise<void>,
+): AsyncIterableIterator<T> {
 	let newData: PromiseAndCallbacks<T>;
 
 	function setNewDataPromise() {
@@ -39,34 +40,34 @@ export function makeAsyncGeneratorAdapter<T>(
 	}
 	setHandledPromise();
 
-	let resolveDone: (symbol: Symbol) => void | undefined;
-	const done = new Promise<Symbol>(resolve => {
-		resolveDone = resolve;
-	});
+	const done = makePromiseAndCallbacks<Symbol>();
 	const doneSymbol = Symbol();
 
-	const asyncTerminator = primeAsyncTerminator(
-		async function*(): AsyncTerminator {
-			for (;;) {
-				try {
-					const data: T = yield;
-					newData.resolve(data);
-				} catch (error) {
-					newData.reject(error);
-					return;
-				}
-
-				await handled.promise;
-				setHandledPromise();
+	const asyncTerminator = (async function*() {
+		for (;;) {
+			try {
+				const data: T = yield;
+				newData!.resolve(data);
+			} catch (error) {
+				newData!.reject(error);
+				return;
 			}
-		},
-	)();
 
-	job(asyncTerminator, () => resolveDone(doneSymbol));
+			await handled!.promise;
+			setHandledPromise();
+		}
+	})();
+
+	// Prime it, pausing at the yield.
+	asyncTerminator.next();
+
+	job({ next: asyncTerminator.next, throw: asyncTerminator.throw! }).then(() =>
+		done.resolve(doneSymbol),
+	);
 
 	return (async function* asyncGenerator() {
 		for (;;) {
-			const data = await Promise.race([done, newData!.promise]);
+			const data = await Promise.race([done.promise, newData!.promise]);
 			setNewDataPromise();
 
 			if (data === doneSymbol) {

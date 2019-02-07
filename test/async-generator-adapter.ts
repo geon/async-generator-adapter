@@ -9,11 +9,10 @@ test("AsyncGeneratorAdapter", t => {
 
 		{
 			const asyncGenerator = makeAsyncGeneratorAdapter<string>(
-				async (asyncTerminator, done) => {
+				async asyncTerminator => {
 					for (const write of writeStrings) {
 						await asyncTerminator.next(write);
 					}
-					done();
 				},
 			);
 
@@ -79,6 +78,23 @@ test("AsyncGeneratorAdapter", t => {
 					"Manual throw at the terminator end.",
 				);
 			}
+		}
+
+		{
+			const asyncGenerator = makeAsyncGeneratorAdapter<number>(
+				async asyncTerminator => {
+					console.time("speed");
+					for (let i = 0; i < 10000000; ++i) {
+						await asyncTerminator.next(i);
+					}
+					console.timeEnd("speed");
+				},
+			);
+
+			for await (const data of asyncGenerator) {
+			}
+
+			t.pass("Should not leak memory.");
 		}
 
 		t.end();
