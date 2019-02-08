@@ -28,33 +28,48 @@ interface AsyncTerminator<T> {
 export function makeAsyncGeneratorAdapter<T>(
 	job: (iterator: AsyncTerminator<T>) => Promise<void>,
 ): AsyncIterableIterator<T> {
-	let newData = makePromiseAndCallbacks<T>();
 	let handled = makePromiseAndCallbacks<void>();
 
-	const done = makePromiseAndCallbacks<Symbol>();
-	const doneSymbol = Symbol();
+	let newData:
+		| { type: "data"; data: T }
+		| { type: "error"; error: Error }
+		| undefined;
+	let done = false;
 
 	job({
 		next: (data: T) => {
-			newData.resolve(data);
+			newData = { type: "data", data };
 			return handled.promise;
 		},
 		throw: (error: Error) => {
-			newData.reject(error);
+			newData = { type: "error", error };
 		},
-	}).then(() => done.resolve(doneSymbol));
+	}).then(() => {
+		done = true;
+	});
 
 	return (async function* asyncGenerator() {
 		for (;;) {
-			const data = await Promise.race([done.promise, newData.promise]);
-			newData = makePromiseAndCallbacks<T>();
+			// Wait for the terminator to send data.
+			// I previously used promises for that, but they created a
+			// memory leak. So busy-loop it is.
+			for (;;) {
+				if (newData) {
+					break;
+				}
+				if (done) {
+					return;
+				}
+				await Promise.resolve();
+			}
 
-			if (data === doneSymbol) {
-				return;
+			if (newData.type === "error") {
+				throw newData.error;
 			}
 
 			try {
-				yield data as T;
+				yield newData.data as T;
+				newData = undefined;
 				handled.resolve();
 				handled = makePromiseAndCallbacks<void>();
 			} catch (error) {
