@@ -1,7 +1,7 @@
 interface PromiseAndCallbacks<T> {
-	promise: Promise<T>;
-	resolve: (data: T) => void;
-	reject: (error: Error) => void;
+	readonly promise: Promise<T>;
+	readonly resolve: (data: T) => void;
+	readonly reject: (error: Error) => void;
 }
 
 function makePromiseAndCallbacks<T>(): PromiseAndCallbacks<T> {
@@ -21,8 +21,8 @@ function makePromiseAndCallbacks<T>(): PromiseAndCallbacks<T> {
 }
 
 interface AsyncTerminator<T> {
-	next: (data: T) => Promise<void>;
-	throw: (error: Error) => void;
+	readonly next: (data: T) => Promise<void>;
+	readonly throw: (error: Error) => void;
 }
 
 export function makeAsyncGeneratorAdapter<T>(
