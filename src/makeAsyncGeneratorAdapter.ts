@@ -28,21 +28,25 @@ interface AsyncTerminator<T> {
 export function makeAsyncGeneratorAdapter<T>(
 	job: (iterator: AsyncTerminator<T>) => Promise<void>,
 ): AsyncIterableIterator<T> {
-	let handled = makePromiseAndCallbacks<void>();
+	let queue: Array<{
+		readonly data: T;
+		readonly handled: PromiseAndCallbacks<void>;
+	}> = [];
 
-	let newData:
-		| { type: "data"; data: T }
-		| { type: "error"; error: Error }
-		| undefined;
 	let done = false;
+	let error: Error | undefined;
 
 	job({
 		next: (data: T) => {
-			newData = { type: "data", data };
+			const handled = makePromiseAndCallbacks<void>();
+			queue.push({
+				data,
+				handled,
+			});
 			return handled.promise;
 		},
-		throw: (error: Error) => {
-			newData = { type: "error", error };
+		throw: (err: Error) => {
+			error = err;
 		},
 	}).then(() => {
 		done = true;
@@ -54,26 +58,31 @@ export function makeAsyncGeneratorAdapter<T>(
 			// I previously used promises for that, but they created a
 			// memory leak. So busy-loop it is.
 			for (;;) {
-				if (newData) {
+				if (queue.length) {
 					break;
+				}
+				if (error) {
+					throw error;
 				}
 				if (done) {
 					return;
 				}
-				await Promise.resolve();
-			}
-
-			if (newData.type === "error") {
-				throw newData.error;
+				await new Promise(resolve => setTimeout(resolve, 0));
 			}
 
 			try {
-				yield newData.data as T;
-				newData = undefined;
-				handled.resolve();
-				handled = makePromiseAndCallbacks<void>();
+				// Yield out all queued up data.
+				for (const queued of queue) {
+					yield queued.data;
+					queued.handled.resolve(undefined);
+				}
+				queue = [];
 			} catch (error) {
-				handled.reject(error);
+				// Reject ALL THE THINGS!
+				// Promises resolved before the throw will have their reject called too, but that's a no-op.
+				for (const queued of queue) {
+					queued.handled.reject(error);
+				}
 				return;
 			}
 		}

@@ -29,6 +29,29 @@ test("AsyncGeneratorAdapter", t => {
 		}
 
 		{
+			const asyncGenerator = makeAsyncGeneratorAdapter<string>(
+				async asyncTerminator => {
+					for (const write of writeStrings) {
+						// This is a contrieved example. More usefully, events might be triggered
+						// by multiple network sockets, before the last one has resolved.
+						asyncTerminator.next(write);
+					}
+				},
+			);
+
+			const readStrings = [];
+			for await (const read of asyncGenerator) {
+				readStrings.push(read);
+			}
+
+			t.deepEqual(
+				readStrings,
+				writeStrings,
+				"Concurrent termination should work.",
+			);
+		}
+
+		{
 			const thrownError = new Error("fake");
 
 			const asyncGenerator = makeAsyncGeneratorAdapter<string>(
@@ -61,7 +84,7 @@ test("AsyncGeneratorAdapter", t => {
 			const asyncGenerator = makeAsyncGeneratorAdapter<string>(
 				async asyncTerminator => {
 					try {
-						await asyncTerminator.throw!(thrownError);
+						await asyncTerminator.throw(thrownError);
 					} catch (caughtError) {
 						t.fail("Should not throw.");
 					}
@@ -80,22 +103,21 @@ test("AsyncGeneratorAdapter", t => {
 			}
 		}
 
-		{
-			const asyncGenerator = makeAsyncGeneratorAdapter<number>(
-				async asyncTerminator => {
-					console.time("speed");
-					for (let i = 0; i < 10000000; ++i) {
-						await asyncTerminator.next(i);
-					}
-					console.timeEnd("speed");
-				},
-			);
-
-			for await (const data of asyncGenerator) {
-			}
-
-			t.pass("Should not leak memory.");
-		}
+		// This test is slow.
+		// {
+		// 	const asyncGenerator = makeAsyncGeneratorAdapter<number>(
+		// 		async asyncTerminator => {
+		// 			console.time("speed");
+		// 			for (let i = 0; i < 10000000; ++i) {
+		// 				await asyncTerminator.next(i);
+		// 			}
+		// 			console.timeEnd("speed");
+		// 		},
+		// 	);
+		// 	for await (const _data of asyncGenerator) {
+		// 	}
+		// 	t.pass("Should not leak memory.");
+		// }
 
 		t.end();
 	})();
