@@ -23,11 +23,13 @@ function makePromiseAndCallbacks<T>(): PromiseAndCallbacks<T> {
 interface AsyncTerminator<T> {
 	readonly next: (data: T) => Promise<void>;
 	readonly throw: (error: Error) => void;
+	readonly done: () => void;
 }
 
-export function makeAsyncGeneratorAdapter<T>(
-	job: (iterator: AsyncTerminator<T>) => Promise<void>,
-): AsyncIterableIterator<T> {
+export function makeManualAsyncGeneratorAdapter<T>(): {
+	readonly asyncTerminator: AsyncTerminator<T>;
+	readonly asyncGenerator: AsyncIterableIterator<T>;
+} {
 	let queue: Array<{
 		readonly data: T;
 		readonly handled: PromiseAndCallbacks<void>;
@@ -36,7 +38,7 @@ export function makeAsyncGeneratorAdapter<T>(
 	let done = false;
 	let error: Error | undefined;
 
-	job({
+	const asyncTerminator: AsyncTerminator<T> = {
 		next: (data: T) => {
 			const handled = makePromiseAndCallbacks<void>();
 			queue.push({
@@ -48,11 +50,12 @@ export function makeAsyncGeneratorAdapter<T>(
 		throw: (err: Error) => {
 			error = err;
 		},
-	}).then(() => {
-		done = true;
-	});
+		done: () => {
+			done = true;
+		},
+	};
 
-	return (async function* asyncGenerator() {
+	const asyncGenerator = (async function*() {
 		for (;;) {
 			// Wait for the terminator to send data.
 			// I previously used promises for that, but they created a
@@ -87,4 +90,21 @@ export function makeAsyncGeneratorAdapter<T>(
 			}
 		}
 	})();
+
+	return {
+		asyncTerminator,
+		asyncGenerator,
+	};
+}
+
+export function makeAsyncGeneratorAdapter<T>(
+	job: (iterator: AsyncTerminator<T>) => Promise<void>,
+): AsyncIterableIterator<T> {
+	const { asyncTerminator, asyncGenerator } = makeManualAsyncGeneratorAdapter<
+		T
+	>();
+
+	job(asyncTerminator).then(asyncTerminator.done);
+
+	return asyncGenerator;
 }
