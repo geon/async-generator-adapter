@@ -103,21 +103,18 @@ test("AsyncGeneratorAdapter", t => {
 			}
 		}
 
-		// This test is slow.
-		// {
-		// 	const asyncGenerator = makeAsyncGeneratorAdapter<number>(
-		// 		async asyncTerminator => {
-		// 			console.time("speed");
-		// 			for (let i = 0; i < 10000000; ++i) {
-		// 				await asyncTerminator.next(i);
-		// 			}
-		// 			console.timeEnd("speed");
-		// 		},
-		// 	);
-		// 	for await (const _data of asyncGenerator) {
-		// 	}
-		// 	t.pass("Should not leak memory.");
-		// }
+		{
+			const asyncGenerator = makeAsyncGeneratorAdapter<number>(
+				async asyncTerminator => {
+					for (let i = 0; i < 10000000; ++i) {
+						await asyncTerminator.next(i);
+					}
+				},
+			);
+			for await (const _data of asyncGenerator) {
+			}
+			t.pass("Should not leak memory.");
+		}
 
 		t.end();
 	})();
